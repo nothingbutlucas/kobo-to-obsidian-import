@@ -4,6 +4,7 @@ import sqlite3
 import json
 import os
 import sys
+import markups
 
 # region Settings
 settings_file = 'settings.json'
@@ -18,6 +19,18 @@ with open(settings_file) as f:
 
 kobo_path = settings['kobo_path']
 obsidian_path = settings['obsidian_path']
+
+markups_dir = settings.get('markups_dir') or os.path.join(os.path.dirname(kobo_path), 'markups')
+markups_enabled = settings.get('markups', True)
+if markups_enabled and not os.path.isdir(markups_dir):
+    print(f'WARNING: markups folder not found at {markups_dir}. '
+          'Markups will be skipped.')
+    markups_enabled = False
+markup_config = {
+    'markups_dir': markups_dir,
+    'attachments_dir': settings.get('attachments_dir', 'attachments'),
+    'markup_callout': settings.get('markup_callout', '> [!example] #markup'),
+}
 # endregion
 
 class Highlight:
@@ -37,7 +50,8 @@ class Highlight:
     """
 
     def __init__(self, bookmark_type, text, volume_id, content_id,
-                 date_modified, date_created, container_start, annotation, color):
+                 date_modified, date_created, container_start, annotation, color,
+                 bookmark_id=None):
         """
         Initializes a new instance of the Highlight class.
 
@@ -51,6 +65,7 @@ class Highlight:
         - container_start (str): The location of the highlight in the book.
         """
         self.Type = bookmark_type
+        self.BookmarkID = bookmark_id
         self.Text = text.strip() if text is not None else text
         self.VolumeID = volume_id
         self.ContentID = content_id
@@ -169,6 +184,10 @@ class Collection:
                 f.write(f'# {book}\n')
                 f.write('\n---\n\n')
                 for bookmark in books[book]:
+                    if bookmark.Type == 'markup':
+                        if markups_enabled:
+                            markups.export_markup(f, bookmark, output, markup_config)
+                        continue
                     if bookmark.Color == 0:
                         quote = settings['callout_yellow']
                     elif bookmark.Color == 1:
@@ -237,7 +256,7 @@ class KoboReader:
         c = conn.cursor()
         try:
             # Execute a SQL command to select all highlights from the Bookmark table
-            c.execute("SELECT Type, Text, VolumeID, ContentID, DateModified, DateCreated, StartContainerPath, Annotation, Color  FROM Bookmark WHERE Type in ('highlight','note')")
+            c.execute("SELECT Type, Text, VolumeID, ContentID, DateModified, DateCreated, StartContainerPath, Annotation, Color, BookmarkID  FROM Bookmark WHERE Type in ('highlight','note','markup')")
             # Fetch all the highlights from the cursor object
             highlights = c.fetchall()
         except:
@@ -250,7 +269,7 @@ class KoboReader:
         coll = Collection()
         # Loop through all the highlights and add them to the Collection object
         for highlight in highlights:
-            bookmark = Highlight(highlight[0], highlight[1], highlight[2], highlight[3], highlight[4], highlight[5], highlight[6], highlight[7], highlight[8])
+            bookmark = Highlight(highlight[0], highlight[1], highlight[2], highlight[3], highlight[4], highlight[5], highlight[6], highlight[7], highlight[8], highlight[9])
             author = bookmark.GetAuthor()
             if author is None:
                 author = 'Unknown'
@@ -272,3 +291,5 @@ for author in reversed(collection.Author):
     books = collection.Author[author]
     # Export the highlights for the current author to the Obsidian vault using the export method of the Collection object
     collection.export(author, obsidian_path)
+
+markups.summary()

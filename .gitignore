@@ -2,3 +2,6 @@ dev
 *.lua
 *.md
 settings.json.bak*
+*.sh
+*.sqlite
+__pycache__/
